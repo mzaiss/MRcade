@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2D FFT Emoji (RGB)</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:20px;background:#0b0d10;color:#e6eaf2}
+    h1{font-size:18px;margin:0 0 12px}
+    .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+    .panel{background:#141821;border:1px solid #232a36;border-radius:8px;padding:12px}
+    canvas{image-rendering:pixelated;background:#0b0d10;border:1px solid #232a36;width:360px;height:360px}
+    .controls{margin-bottom:12px;display:flex;gap:8px;align-items:center}
+    button{background:#2d6cdf;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer}
+    button:active{transform:translateY(1px)}
+    .caption{margin-top:8px;color:#9fb0cc;font-size:12px}
+  </style>
+  <script defer src="standalone-fft.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <h1>2D FFT of Random Emoji (per RGB channel)</h1>
+  <div class="controls">
+    <button id="btn">New emoji</button>
+    <label><input type="checkbox" id="pongMode" checked="false"> Pong mode</label>
+    <label><input type="checkbox" id="curlMode"> Curl mode</label>
+    <label><input type="checkbox" id="gradMode"> Gradient mode</label>
+    <label><input type="checkbox" id="remoteTilt"> Remote tilt</label>
+    <span id="remoteTiltStatus" class="small"></span>
+  </div>
+  <div class="row">
+    <div class="panel">
+      <canvas id="src" width="64" height="64"></canvas>
+      <div class="caption">Original 64×64</div>
+    </div>
+    <div class="panel">
+      <canvas id="fft" width="64" height="64"></canvas>
+      <div class="caption">|FFT| with low-freq centered</div>
+    </div>
+    <div class="panel">
+      <canvas id="mask" width="64" height="64"></canvas>
+      <div class="caption">Mask (draw: LMB add, RMB erase)</div>
+    </div>
+    <div class="panel">
+      <canvas id="fftMasked" width="64" height="64"></canvas>
+      <div class="caption">|FFT ⊙ Mask| (per RGB)</div>
+    </div>
+    <div class="panel">
+      <canvas id="recon" width="64" height="64"></canvas>
+      <div class="caption">Inverse FFT of masked k-space</div>
+    </div>
+  </div>
+  <div class="controls" style="margin-top:12px">
+    <label><input type="checkbox" id="hideOriginal"> Hide/Show original</label>
+    <span id="emojiName" class="caption" style="margin-left:12px"></span>
+  </div>
+</body>
+</html>
+
+

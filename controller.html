@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone Controller (WebRTC)</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:16px;background:#0b0d10;color:#e6eaf2}
+    textarea, input, button{width:100%;box-sizing:border-box;margin:8px 0;padding:8px;border-radius:6px;border:1px solid #232a36;background:#141821;color:#e6eaf2}
+    button{background:#2d6cdf;border:none;cursor:pointer}
+    .row{display:flex;gap:12px}
+    .row > div{flex:1}
+    .small{font-size:12px;color:#9fb0cc}
+    .ok{color:#6be675}
+    .warn{color:#ffb86b}
+  </style>
+</head>
+<body>
+  <h2>Phone Controller</h2>
+  <div class="small">Open this on your Pixel 7 (served over http/https). Grant motion permission when asked.</div>
+  <div>
+    <button id="perm">Enable motion sensors</button>
+    <div id="permStatus" class="small"></div>
+  </div>
+  <div class="small" id="secStatus"></div>
+  <h3>Signaling</h3>
+  <div class="small">WebSocket auto-signaling only. If not connected, nothing will run.</div>
+  <div class="small" id="connStatus">Status: idle</div>
+  <div class="small" id="wsStatus">Signaling: not connected</div>
+  <pre id="dbg" class="small" style="white-space:pre-wrap;background:#111;padding:8px;border-radius:6px;max-height:200px;overflow:auto"></pre>
+  <div class="small" id="motionStatus">Motion: waiting…</div>
+
+  <script>
+  let pc, dc;
+  let granted = false;
+  const permBtn = document.getElementById('perm');
+  const permStatus = document.getElementById('permStatus');
+  const connStatus = document.getElementById('connStatus');
+  const dbg = document.getElementById('dbg');
+
+  permBtn.addEventListener('click', async () => {
+    try {
+      // Try both iOS-style permission APIs if present
+      let grantedMotion = true, grantedOrient = true;
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try { grantedMotion = (await DeviceMotionEvent.requestPermission()) === 'granted'; } catch {}
+      }
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try { grantedOrient = (await DeviceOrientationEvent.requestPermission()) === 'granted'; } catch {}
+      }
+      granted = grantedMotion && grantedOrient;
+      permStatus.textContent = granted ? 'Motion permission granted' : 'Motion permission denied';
+      permStatus.className = 'small ' + (granted ? 'ok' : 'warn');
+      // Start sensors immediately to test events
+      startSensors();
+    } catch (e) {
+      permStatus.textContent = 'Permission error: ' + e;
+      permStatus.className = 'small warn';
+    }
+  });
+
+  function setStatus(t){ connStatus.textContent = 'Status: ' + t; log('[status] '+t); }
+  function setWsStatus(t){ document.getElementById('wsStatus').textContent = 'Signaling: ' + t; }
+  function log(m){ try{ console.log(m); dbg.textContent += m+'\n'; dbg.scrollTop = dbg.scrollHeight; }catch{} }
+
+  function waitForIceComplete(pc){
+    return new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') return resolve();
+      const check = () => {
+        if (pc.iceGatheringState === 'complete') {
+          pc.removeEventListener('icegatheringstatechange', check);
+          resolve();
+        }
+      };
+      pc.addEventListener('icegatheringstatechange', check);
+      // safety timeout
+      setTimeout(() => { resolve(); }, 3000);
+    });
+  }
+
+  async function createPeer() {
+    pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
+    dc = pc.createDataChannel('tilt');
+    dc.onopen = () => setStatus('connected');
+    dc.onclose = () => setStatus('closed');
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIceComplete(pc);
+    wsSend({ type: 'offer', sdp: pc.localDescription });
+    log('[rtc] offer created (ICE complete)');
+  }
+
+  // no copy/paste fallback
+
+  // Send orientation at ~10Hz
+  let lastSend = 0;
+  const SEND_INTERVAL_MS = 100;
+  function startSensors() {
+    // Show security context info
+    document.getElementById('secStatus').textContent = `Secure context: ${window.isSecureContext}`;
+    let sentCount = 0; let rawCount = 0; let lastTs = 0;
+    const onOrientation = (e) => {
+      rawCount++;
+      const now = performance.now();
+      // update UI even if DC not open
+      const betaNow = ((e && e.beta) || 0).toFixed(1);
+      const gammaNow = ((e && e.gamma) || 0).toFixed(1);
+      document.getElementById('motionStatus').textContent = `Motion: beta=${betaNow} gamma=${gammaNow} sent=${sentCount} raw=${rawCount}`;
+      if (now - lastSend < SEND_INTERVAL_MS) return; // throttle ~10Hz
+      lastSend = now;
+      // Normalize: gamma (roll) [-90,90], beta (pitch) [-180,180]
+      const payload = { t: Date.now(), beta: e.beta || 0, gamma: e.gamma || 0, alpha: e.alpha || 0 };
+      try {
+        dc.send(JSON.stringify(payload));
+        // Also send a lightweight normalized vector via WS for apps that subscribe directly
+        const nx = Math.max(-1, Math.min(1, (payload.gamma||0) / 45));
+        const ny = Math.max(-1, Math.min(1, (payload.beta||0) / 45));
+        wsSend({ type: 'tilt', nx, ny, t: payload.t });
+      } catch {}
+      sentCount++;
+      lastTs = payload.t;
+    };
+    const onMotion = (e) => {
+      rawCount++;
+    };
+    try { window.removeEventListener('deviceorientation', onOrientation); } catch {}
+    try { window.removeEventListener('devicemotion', onMotion); } catch {}
+    window.addEventListener('deviceorientation', onOrientation);
+    window.addEventListener('deviceorientationabsolute', onOrientation);
+    window.addEventListener('devicemotion', onMotion);
+    // warn if no events after 3s
+    setTimeout(()=>{ if (rawCount===0) log('[motion] no sensor events yet (needs HTTPS on some devices/browsers)'); }, 3000);
+  }
+
+  // auto create offer after WS connects
+
+  // --- WebSocket auto signaling ---
+  let ws;
+  let peerId = '1';
+  function wsSend(obj){ try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch{} }
+  function setupWS(){
+    try {
+      const loc = window.location;
+      const wsUrl = `ws://${loc.hostname}:8765`;
+      ws = new WebSocket(wsUrl);
+      setWsStatus('connecting...');
+      ws.onopen = () => {
+        wsSend({ type: 'hello', role: 'controller', peer: peerId });
+        setWsStatus('connected');
+        // create the offer automatically
+        createPeer().then(()=>{ startSensors(); }).catch(e=>{ log('[rtc] createPeer error: '+e); });
+      };
+      ws.onmessage = async (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === 'answer' && pc && !pc.currentRemoteDescription) {
+            await pc.setRemoteDescription(data.sdp);
+            setStatus('answer (ws) applied; waiting for connection...');
+            log('[rtc] answer applied');
+          }
+        } catch{}
+      };
+      ws.onerror = (e) => { setWsStatus('error'); log('[ws] error'); };
+      ws.onclose = (e) => { setWsStatus('closed'); log('[ws] closed; reconnecting shortly'); setTimeout(setupWS, 1500); };
+    } catch{}
+  }
+  setupWS();
+  </script>
+</body>
+</html>
+
+

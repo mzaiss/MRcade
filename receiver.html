@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Receiver (WebRTC)</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:16px;background:#0b0d10;color:#e6eaf2}
+    textarea, input, button{width:100%;box-sizing:border-box;margin:8px 0;padding:8px;border-radius:6px;border:1px solid #232a36;background:#141821;color:#e6eaf2}
+    button{background:#2d6cdf;border:none;cursor:pointer}
+    .small{font-size:12px;color:#9fb0cc}
+    canvas{background:#0b0d10;border:1px solid #232a36;width:360px;height:360px}
+  </style>
+</head>
+<body>
+  <h2>Receiver</h2>
+  <div class="small">Open on desktop. For the main app, use <a id="indexLink" href="#" target="_blank" rel="noopener">index.html (new tab)</a>.</div>
+  <div class="small">Phone controller QR:</div>
+  <img id="qrImg" src="qr_controller.png" alt="Controller QR" style="width:180px;height:180px;border:1px solid #232a36;background:#fff" />
+  <div class="small">WebSocket auto-signaling only. If not connected, nothing will run.</div>
+  <div class="small" id="connStatus">Status: idle</div>
+  <div class="small" id="wsStatus">Signaling: not connected</div>
+  <pre id="dbg" class="small" style="white-space:pre-wrap;background:#111;padding:8px;border-radius:6px;max-height:200px;overflow:auto"></pre>
+  <div class="small" id="tiltStatus">Tilt: waiting…</div>
+
+  <h3>Live tilt</h3>
+  <canvas id="viz" width="64" height="64"></canvas>
+  <div class="small">beta (pitch) maps to Y, gamma (roll) maps to X</div>
+  <h3>Tilt moment (integrated)</h3>
+  <canvas id="vizMoment" width="64" height="64"></canvas>
+  <div class="small">Integration of normalized tilt over time</div>
+
+  <script>
+  let pc, dc;
+  const connStatus = document.getElementById('connStatus');
+  function setStatus(t){ connStatus.textContent = 'Status: ' + t; log('[status] '+t); }
+  function setWsStatus(t){ document.getElementById('wsStatus').textContent = 'Signaling: ' + t; }
+  function log(m){ try{ console.log(m); document.getElementById('dbg').textContent += m+'\n'; const p=document.getElementById('dbg'); p.scrollTop=p.scrollHeight; }catch{} }
+
+  // no copy/paste path
+
+  function handleTilt(data) {
+    try {
+      const { beta, gamma } = JSON.parse(data);
+      const nx = Math.max(-45, Math.min(45, gamma || 0)) / 45;  // -1..1
+      const ny = Math.max(-45, Math.min(45, beta || 0)) / 45;    // -1..1
+      moveDot(nx, ny);
+      if (typeof beta === 'number' && typeof gamma === 'number') {
+        document.getElementById('tiltStatus').textContent = `Tilt: beta=${beta.toFixed(1)} gamma=${gamma.toFixed(1)}`;
+      }
+    } catch {}
+  }
+
+  const canvas = document.getElementById('viz');
+  const ctx = canvas.getContext('2d');
+  const mCanvas = document.getElementById('vizMoment');
+  const mCtx = mCanvas.getContext('2d');
+  let mX = 32, mY = 32; // center start
+  const momentGain = 2.0; // pixels per sample at full tilt
+  function drawMoment() {
+    const w = mCanvas.width, h = mCanvas.height;
+    mCtx.clearRect(0,0,w,h);
+    mCtx.fillStyle = '#141821'; mCtx.fillRect(0,0,w,h);
+    mCtx.fillStyle = '#40a9ff';
+    mCtx.fillRect(Math.round(mX), Math.round(mY), 4, 4);
+  }
+  function moveDot(nx, ny) {
+    const w = canvas.width, h = canvas.height;
+    const x = Math.round((nx + 1) * 0.5 * (w-1));
+    const y = Math.round((ny + 1) * 0.5 * (h-1));
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#141821'; ctx.fillRect(0,0,w,h);
+    ctx.fillStyle = '#6be675';
+    ctx.fillRect(x, y, 4, 4);
+    // integrate into moment with clamping
+    mX = Math.max(0, Math.min(w-4, mX + nx * momentGain));
+    mY = Math.max(0, Math.min(h-4, mY + ny * momentGain));
+    drawMoment();
+  }
+
+  // no copy/paste path
+
+  // --- WebSocket auto signaling ---
+  let ws;
+  let peerId = '1';
+  function wsSend(obj){ try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch{} }
+  function setupWS(){
+    try {
+      const loc = window.location;
+      const wsUrl = `ws://${loc.hostname}:8765`;
+      ws = new WebSocket(wsUrl);
+      setWsStatus('connecting...');
+      ws.onopen = () => { wsSend({ type: 'hello', role: 'receiver', peer: peerId }); setWsStatus('connected'); };
+      ws.onmessage = async (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === 'offer') {
+            // auto-apply offer and respond with answer
+            await applyWSOffer(data.sdp);
+          }
+        } catch{}
+      };
+      ws.onerror = () => { setWsStatus('error'); log('[ws] error'); };
+      ws.onclose = () => { setWsStatus('closed'); log('[ws] closed'); };
+    } catch{}
+  }
+
+  function waitForIceComplete(pc){
+    return new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') return resolve();
+      const check = () => {
+        if (pc.iceGatheringState === 'complete') {
+          pc.removeEventListener('icegatheringstatechange', check);
+          resolve();
+        }
+      };
+      pc.addEventListener('icegatheringstatechange', check);
+      setTimeout(() => { resolve(); }, 3000);
+    });
+  }
+
+  async function applyWSOffer(offer){
+    pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
+    pc.ondatachannel = (ev) => {
+      dc = ev.channel;
+      dc.onopen = () => setStatus('connected');
+      dc.onclose = () => setStatus('closed');
+      dc.onmessage = (m) => handleTilt(m.data);
+    };
+    await pc.setRemoteDescription(offer);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await waitForIceComplete(pc);
+    if (pc.localDescription) { wsSend({ type: 'answer', sdp: pc.localDescription }); log('[ws] sent answer with ICE'); }
+    setStatus('auto answer created');
+    log('[rtc] answer created');
+  }
+
+  setupWS();
+  // Update index link to current host
+  (function(){ try{ const loc=window.location; document.getElementById('indexLink').href = `http://${loc.hostname}:${loc.port}/index.html`; }catch{} })();
+  </script>
+</body>
+</html>
+
+
