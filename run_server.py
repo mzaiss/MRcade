@@ -76,8 +76,7 @@ def serve(directory: str = '.'):
     print('  - If Chrome blocks motion sensors, tap "Enable motion sensors" on the phone page.')
     # Single controller/receiver pair recommended
 
-    # Print QR codes for quick phone access
-    try_print_qr(index_url, 'App index')
+    # Print QR code for quick phone access
     try_print_qr(phone1_url, 'Phone')
 
     # Save PNG QR codes to serve on receiver page
