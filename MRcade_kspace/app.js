@@ -55,6 +55,7 @@ const emojiNameEl = document.getElementById('emojiName');
 const maskCtx = maskCanvas.getContext('2d');
 const fftMaskedCtx = fftMaskedCanvas.getContext('2d');
 const reconCtx = reconCanvas.getContext('2d');
+const enableTiltBtn = document.getElementById('enableTilt');
 
 // binary mask 0..1, start filled with 0s (black = block all)
 const maskData = new Array(SIZE).fill(null).map(() => new Array(SIZE).fill(0)); // can hold integer weights
@@ -653,12 +654,20 @@ function handleLocalOrientation(e){
   if (shipActive) { shipVX += nx * shipAccel * 4; shipVY += ny * shipAccel * 4; }
   if (gradActive) { gradX += nx * 8; gradY += ny * 8; }
 }
+function handleLocalMotion(e){
+  if (!localTiltEverFired) {
+    localTiltEverFired = true;
+    setLocalTiltStatus('on');
+  }
+}
 function startLocalTilt(){
   if (localTiltActive) return;
   localTiltActive = true;
   localTiltEverFired = false;
   setLocalTiltStatus('probing...');
   window.addEventListener('deviceorientation', handleLocalOrientation);
+  try { window.addEventListener('deviceorientationabsolute', handleLocalOrientation); } catch{}
+  try { window.addEventListener('devicemotion', handleLocalMotion); } catch{}
   // Probe for 2 seconds; if no events, turn it back off
   setTimeout(()=>{
     if (!localTiltEverFired) {
@@ -672,34 +681,57 @@ function stopLocalTilt(){
   localTiltActive = false;
   // don't override a more specific status set by the probe caller
   window.removeEventListener('deviceorientation', handleLocalOrientation);
+  try { window.removeEventListener('deviceorientationabsolute', handleLocalOrientation); } catch{}
+  try { window.removeEventListener('devicemotion', handleLocalMotion); } catch{}
 }
 // auto-start local tilt when available
 
 // Auto-detect mobile + sensor support, suggest enabling
+function showEnableTiltButton(show, label){
+  if (!enableTiltBtn) return;
+  enableTiltBtn.style.display = show ? '' : 'none';
+  if (label) enableTiltBtn.textContent = label;
+}
+async function enableTiltFlow(){
+  if (!enableTiltBtn) { startLocalTilt(); return; }
+  enableTiltBtn.disabled = true;
+  setLocalTiltStatus('requesting permission...');
+  let granted = true;
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      try { granted = (await DeviceMotionEvent.requestPermission()) === 'granted' && granted; } catch { granted = false; }
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try { granted = (await DeviceOrientationEvent.requestPermission()) === 'granted' && granted; } catch { granted = false; }
+    }
+  } catch {}
+  if (granted) {
+    startLocalTilt();
+    setLocalTiltStatus('on');
+    showEnableTiltButton(false);
+  } else {
+    setLocalTiltStatus('denied');
+    enableTiltBtn.disabled = false;
+  }
+}
 try {
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   const hasOrientation = typeof window.DeviceOrientationEvent !== 'undefined';
+  const isSecure = !!window.isSecureContext;
+  const needsPerm = hasOrientation && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
   if (hasOrientation) {
-    // For iOS 13+ permissions
-    const needsPerm = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
     if (needsPerm) {
-      localTiltStatusEl && (localTiltStatusEl.textContent = 'tap screen to enable');
-      const onTap = async () => {
-        try {
-          const res = await DeviceOrientationEvent.requestPermission();
-          if (res === 'granted') { startLocalTilt(); localTiltStatusEl && (localTiltStatusEl.textContent = 'on'); }
-          else { localTiltStatusEl && (localTiltStatusEl.textContent = 'denied'); }
-        } catch {
-          localTiltStatusEl && (localTiltStatusEl.textContent = 'error');
-        }
-        window.removeEventListener('click', onTap, { once: true });
-      };
-      window.addEventListener('click', onTap, { once: true });
-    } else {
+      setLocalTiltStatus('permission required');
+      showEnableTiltButton(true, 'Enable tilt');
+      if (enableTiltBtn) enableTiltBtn.onclick = enableTiltFlow;
+    } else if (isSecure) {
       startLocalTilt();
+    } else {
+      setLocalTiltStatus('blocked: open via HTTPS to enable sensors');
+      showEnableTiltButton(true, 'Retry tilt');
+      if (enableTiltBtn) enableTiltBtn.onclick = () => { startLocalTilt(); };
     }
   } else {
-    localTiltStatusEl && (localTiltStatusEl.textContent = 'not available');
+    setLocalTiltStatus('not available');
   }
 } catch{}
 
