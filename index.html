@@ -27,23 +27,13 @@
     <label><input type="checkbox" id="gradMode"> Gradient mode</label>
     <label><input type="checkbox" id="remoteTilt"> Remote tilt</label>
     <span id="remoteTiltStatus" class="small"></span>
+    <label style="margin-left:12px">Marker size <input id="markerSize" type="number" value="6" min="1" max="16" step="1" style="width:64px"></label>
+    <label style="margin-left:12px"><input type="checkbox" id="acqWeight"> Acquisition weighting</label>
   </div>
   <div class="row">
     <div class="panel">
-      <canvas id="src" width="64" height="64"></canvas>
-      <div class="caption">Original 64×64</div>
-    </div>
-    <div class="panel">
-      <canvas id="fft" width="64" height="64"></canvas>
-      <div class="caption">|FFT| with low-freq centered</div>
-    </div>
-    <div class="panel">
-      <canvas id="mask" width="64" height="64"></canvas>
-      <div class="caption">Mask (draw: LMB add, RMB erase)</div>
-    </div>
-    <div class="panel">
       <canvas id="fftMasked" width="64" height="64"></canvas>
-      <div class="caption">|FFT ⊙ Mask| (per RGB)</div>
+      <div class="caption">|FFT ⊙ Mask| (draw here: LMB add, RMB erase)</div>
     </div>
     <div class="panel">
       <canvas id="recon" width="64" height="64"></canvas>
@@ -51,7 +41,7 @@
     </div>
   </div>
   <div class="controls" style="margin-top:12px">
-    <label><input type="checkbox" id="hideOriginal"> Hide/Show original</label>
+    <button id="revealOriginal">Reveal original (full mask)</button>
     <span id="emojiName" class="caption" style="margin-left:12px"></span>
   </div>
 </body>

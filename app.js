@@ -2,8 +2,8 @@
 
 const SIZE = 64;
 const EMOJIS = [
-  // Faces
-  '😀','😃','😄','😁','😆','😅','😂','🙂','😊','😇','😉','😍','😘','😜','🤪','🤩','😎','🥳','🤓','🤠','🥶','🥵','🤖','👻','👽','💀','🧙‍♂️','🧛‍♀️','🧟‍♂️','🧞‍♂️',
+  // Faces we keep for guessing variety
+  '😀','😎','🤖','👻','👽','💀','🧙‍♂️','🧛‍♀️','🧟‍♂️','🧞‍♂️',
   // Animals
   '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐵','🐸','🐔','🦄','🦉','🦇','🐙','🦈','🐳','🐬','🐢','🦕','🦖','🦩','🦦',
   // Food & Drink
@@ -19,7 +19,7 @@ const EMOJIS = [
 // Official-style readable names for all emojis in EMOJIS
 const EMOJI_NAMES = new Map([
   // Faces
-  ['😀','grinning face'],['😃','grinning face with big eyes'],['😄','grinning face with smiling eyes'],['😁','beaming face with smiling eyes'],['😆','grinning squinting face'],['😅','grinning face with sweat'],['😂','face with tears of joy'],['🙂','slightly smiling face'],['😊','smiling face with smiling eyes'],['😇','smiling face with halo'],['😉','winking face'],['😍','smiling face with heart-eyes'],['😘','face blowing a kiss'],['😜','winking face with tongue'],['🤪','zany face'],['🤩','star-struck'],['😎','smiling face with sunglasses'],['🥳','partying face'],['🤓','nerd face'],['🤠','cowboy hat face'],['🥶','cold face'],['🥵','hot face'],['🤖','robot'],['👻','ghost'],['👽','alien'],['💀','skull'],['🧙‍♂️','man mage'],['🧛‍♀️','woman vampire'],['🧟‍♂️','man zombie'],['🧞‍♂️','man genie'],
+  ['😀','grinning face'],['😎','smiling face with sunglasses'],['🤖','robot'],['👻','ghost'],['👽','alien'],['💀','skull'],['🧙‍♂️','man mage'],['🧛‍♀️','woman vampire'],['🧟‍♂️','man zombie'],['🧞‍♂️','man genie'],
   // Animals
   ['🐶','dog face'],['🐱','cat face'],['🐭','mouse face'],['🐹','hamster face'],['🐰','rabbit face'],['🦊','fox'],['🐻','bear'],['🐼','panda'],['🐨','koala'],['🐯','tiger face'],['🦁','lion'],['🐮','cow face'],['🐷','pig face'],['🐵','monkey face'],['🐸','frog'],['🐔','chicken'],['🦄','unicorn'],['🦉','owl'],['🦇','bat'],['🐙','octopus'],['🦈','shark'],['🐳','spouting whale'],['🐬','dolphin'],['🐢','turtle'],['🦕','sauropod'],['🦖','T-Rex'],['🦩','flamingo'],['🦦','otter'],
   // Food & Drink
@@ -33,55 +33,52 @@ const EMOJI_NAMES = new Map([
 ]);
 
 
-const srcCanvas = document.getElementById('src');
-const fftCanvas = document.getElementById('fft');
-const maskCanvas = document.getElementById('mask');
-const fftMaskedCanvas = document.getElementById('fftMasked');
+// const srcCanvas = document.getElementById('src'); // removed original canvas
+// const fftCanvas = document.getElementById('fft'); // removed pure k-space canvas
+const maskCanvas = document.getElementById('fftMasked');
+const fftMaskedCanvas = maskCanvas; // unify: draw mask directly on masked k-space canvas
 const reconCanvas = document.getElementById('recon');
 const btn = document.getElementById('btn');
-const hideOriginalEl = document.getElementById('hideOriginal');
+const revealOriginalBtn = document.getElementById('revealOriginal');
 const pongModeEl = document.getElementById('pongMode');
 const shipModeEl = document.getElementById('curlMode');
 const gradModeEl = document.getElementById('gradMode');
+const markerSizeInput = document.getElementById('markerSize');
 const remoteTiltEl = document.getElementById('remoteTilt');
+const acqWeightEl = document.getElementById('acqWeight');
 const remoteTiltStatusEl = document.getElementById('remoteTiltStatus');
 const emojiNameEl = document.getElementById('emojiName');
 
-const srcCtx = srcCanvas.getContext('2d');
-const fftCtx = fftCanvas.getContext('2d');
+// const srcCtx = srcCanvas.getContext('2d');
+// const fftCtx = fftCanvas.getContext('2d');
 const maskCtx = maskCanvas.getContext('2d');
 const fftMaskedCtx = fftMaskedCanvas.getContext('2d');
 const reconCtx = reconCanvas.getContext('2d');
 
 // binary mask 0..1, start filled with 0s (black = block all)
-const maskData = new Array(SIZE).fill(null).map(() => new Array(SIZE).fill(0));
+const maskData = new Array(SIZE).fill(null).map(() => new Array(SIZE).fill(0)); // can hold integer weights
 maskCtx.fillStyle = '#000000';
 maskCtx.fillRect(0, 0, SIZE, SIZE);
 
-function redrawMaskCanvas() {
-  const img = maskCtx.createImageData(SIZE, SIZE);
-  const d = img.data;
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
-      const v = maskData[y][x] ? 255 : 0;
-      const i = (y * SIZE + x) * 4;
-      d[i] = v; d[i+1] = v; d[i+2] = v; d[i+3] = 255;
-    }
-  }
-  maskCtx.putImageData(img, 0, 0);
-}
+function redrawMaskCanvas() { /* unified into spectrum; no direct mask rendering */ }
 
 function attachMaskPainting() {
   let painting = false;
   let erase = false;
-  const brush = 2;
+  let brush = Math.max(0, Math.floor((markerSizeInput?.value ? parseInt(markerSizeInput.value, 10) : 6) / 2));
 
   function setMaskAt(x, y, value) {
-    for (let yy = -brush; yy <= brush; yy++) {
-      for (let xx = -brush; xx <= brush; xx++) {
+    const currentBrush = Math.max(0, Math.floor((markerSizeInput?.value ? parseInt(markerSizeInput.value, 10) : 6) / 2));
+    for (let yy = -currentBrush; yy <= currentBrush; yy++) {
+      for (let xx = -currentBrush; xx <= currentBrush; xx++) {
         const px = x + xx; const py = y + yy;
         if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
-          maskData[py][px] = value ? 1 : 0;
+          if (acqWeightEl && acqWeightEl.checked) {
+            const current = maskData[py][px] || 0;
+            maskData[py][px] = value ? (current + 1) : 0;
+          } else {
+            maskData[py][px] = value ? 1 : 0;
+          }
         }
       }
     }
@@ -100,7 +97,6 @@ function attachMaskPainting() {
     erase = (e.button === 2);
     const { x, y } = eventPos(e);
     setMaskAt(x, y, !erase);
-    redrawMaskCanvas();
     updateMaskedSpectrum();
   });
   window.addEventListener('pointerup', () => painting = false);
@@ -108,7 +104,6 @@ function attachMaskPainting() {
     if (!painting) return;
     const { x, y } = eventPos(e);
     setMaskAt(x, y, !erase);
-    redrawMaskCanvas();
     updateMaskedSpectrum();
   });
 }
@@ -212,7 +207,7 @@ function ifft2DComplex(spectrum) {
 }
 
 function magnitudeToImage(rSpec, gSpec, bSpec, useLog, overrideMaxSum, targetAvgSum) {
-  const img = fftCtx.createImageData(SIZE, SIZE);
+  const img = maskCtx.createImageData(SIZE, SIZE);
   const d = img.data;
   const magR = new Array(SIZE).fill(null).map(() => new Array(SIZE).fill(0));
   const magG = new Array(SIZE).fill(null).map(() => new Array(SIZE).fill(0));
@@ -279,8 +274,14 @@ function magnitudeToImage(rSpec, gSpec, bSpec, useLog, overrideMaxSum, targetAvg
 
 function process() {
   const emoji = pickEmoji();
-  drawEmojiToCanvas(emoji);
-  const imgData = srcCtx.getImageData(0, 0, SIZE, SIZE);
+  // synthesize original image into an offscreen canvas to compute k-space
+  const off = document.createElement('canvas'); off.width = SIZE; off.height = SIZE;
+  const offCtx = off.getContext('2d');
+  offCtx.fillStyle = '#000'; offCtx.fillRect(0,0,SIZE,SIZE);
+  offCtx.font = `56px system-ui, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji`;
+  offCtx.textAlign = 'center'; offCtx.textBaseline = 'middle';
+  offCtx.fillText(emoji, SIZE/2, SIZE/2 + 2);
+  const imgData = offCtx.getImageData(0, 0, SIZE, SIZE);
   originalAvgSum = computeAvgNonZeroSumInImageData(imgData);
   const { r, g, b } = splitChannels(imgData);
 
@@ -300,16 +301,14 @@ function process() {
     }
   }
 
-  const img = magnitudeToImage(rF, gF, bF, true);
-  fftCtx.putImageData(img, 0, 0);
+  // pure k-space display removed to save space
 
   // cache current spectra for masking step
   cachedSpectrum = { rF, gF, bF };
   updateMaskedSpectrum();
 
-  // Update emoji name label if original is visible
-  const name = EMOJI_NAMES.get(emoji) || 'Unknown emoji';
-  if (emojiNameEl) emojiNameEl.textContent = hideOriginalEl.checked ? '' : `Name: ${name}`;
+  // Hide emoji name by default until reveal button is pressed
+  if (emojiNameEl) emojiNameEl.textContent = '';
   lastEmoji = emoji;
 }
 
@@ -326,18 +325,15 @@ btn.addEventListener('click', () => {
   // reset curl/gradient markers to their init positions
   if (shipActive) resetShipState();
   if (typeof gradActive !== 'undefined' && gradActive) { gradX = 0; gradY = 0; }
+  if (emojiNameEl) emojiNameEl.textContent = '';
   process();
 });
-hideOriginalEl.addEventListener('change', () => {
-  const panel = srcCanvas;
-  panel.style.visibility = hideOriginalEl.checked ? 'hidden' : 'visible';
-  if (emojiNameEl) {
-    if (hideOriginalEl.checked) {
-      emojiNameEl.textContent = '';
-    } else if (lastEmoji) {
-      const name = EMOJI_NAMES.get(lastEmoji) || 'Unknown emoji';
-      emojiNameEl.textContent = `Name: ${name}`;
-    }
+revealOriginalBtn.addEventListener('click', () => {
+  for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++) maskData[y][x] = 1;
+  updateMaskedSpectrum();
+  if (emojiNameEl && lastEmoji) {
+    const name = EMOJI_NAMES.get(lastEmoji) || 'Unknown emoji';
+    emojiNameEl.textContent = `Name: ${name}`;
   }
 });
 
@@ -345,7 +341,7 @@ hideOriginalEl.addEventListener('change', () => {
 let pongActive = false;
 let pongX = 1, pongY = 1; // integer grid coords
 let pongDX = 1, pongDY = 1; // integer steps per update (ensure co-prime with 2*SIZE)
-const pongSize = 6; // doubled marker size for better visibility
+let pongSize = parseInt(markerSizeInput?.value || '6', 10);
 let pongAnimHandle = null;
 let pongFrameCounter = 0; // throttling counter
 let pongStepInterval = 8; // step every 8 frames (~8x slower), constant for smoothness
@@ -370,8 +366,8 @@ function resetPongState() {
 }
 
 function drawPongOverlay() {
-  // redraw base mask first
-  redrawMaskCanvas();
+  // re-render masked spectrum as base (no stamping in pong)
+  updateMaskedSpectrum();
   // draw marker as a red square overlay
   maskCtx.save();
   maskCtx.fillStyle = '#ff4040';
@@ -433,7 +429,7 @@ window.addEventListener('keydown', (e) => {
         const px = sx + xx;
         const py = sy + yy;
         if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
-          maskData[py][px] = 1;
+          if (acqWeightEl && acqWeightEl.checked) maskData[py][px] = (maskData[py][px] || 0) + 1; else maskData[py][px] = 1;
         }
       }
     }
@@ -446,7 +442,7 @@ window.addEventListener('keydown', (e) => {
 let shipActive = false;
 let shipX = 0, shipY = 0;
 let shipVX = 0, shipVY = 0;
-const shipSize = 3; // 50% smaller than before
+let shipSize = parseInt(markerSizeInput?.value || '6', 10);
 const shipAccel = 0.2;
 const shipFriction = 0.99; // 50% lower damping (from 0.98 -> 0.99)
 let shipAnimHandle = null;
@@ -468,7 +464,8 @@ function resetShipState() {
 }
 
 function drawShipOverlay() {
-  redrawMaskCanvas();
+  // render masked spectrum and draw a blue marker overlay; stamping happens in stepShip
+  updateMaskedSpectrum();
   maskCtx.save();
   maskCtx.fillStyle = '#40a9ff';
   maskCtx.globalAlpha = 0.9;
@@ -493,18 +490,17 @@ function stepShip() {
   if (shipX > SIZE - shipSize) { shipX = SIZE - shipSize; shipVX = -shipVX; }
   if (shipY < 0) { shipY = 0; shipVY = -shipVY; }
   if (shipY > SIZE - shipSize) { shipY = SIZE - shipSize; shipVY = -shipVY; }
-  // stamp mask wherever the ship passes (leave a trail)
+  // stamp trail into mask
   for (let yy = 0; yy < shipSize; yy++) {
     for (let xx = 0; xx < shipSize; xx++) {
       const px = Math.round(shipX) + xx;
       const py = Math.round(shipY) + yy;
-      if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) maskData[py][px] = 1;
+      if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
+        if (acqWeightEl && acqWeightEl.checked) maskData[py][px] = (maskData[py][px] || 0) + 1; else maskData[py][px] = 1;
+      }
     }
   }
-  // redraw and periodically update spectrum
   drawShipOverlay();
-  shipFrameCounter = (shipFrameCounter + 1) & 3; // mod 4
-  if (shipFrameCounter === 0) updateMaskedSpectrum();
 }
 
 function startShip() {
@@ -535,13 +531,14 @@ shipModeEl.addEventListener('change', () => {
 // --- Gradient mode (linear position control) ---
 let gradActive = false;
 let gradX = 0, gradY = 0;
-const gradSize = 4;
+let gradSize = parseInt(markerSizeInput?.value || '6', 10);
 const gradStep = 1; // per frame step when key pressed
 let gradAnim = null;
 let gLeft=false,gRight=false,gUp=false,gDown=false;
 
 function drawGradOverlay(){
-  redrawMaskCanvas();
+  // draw marker overlay (green) on top of current masked spectrum
+  updateMaskedSpectrum();
   maskCtx.save();
   maskCtx.fillStyle = '#6be675';
   maskCtx.globalAlpha = 0.9;
@@ -557,15 +554,15 @@ function stepGrad(){
   // clamp
   gradX = Math.max(0, Math.min(SIZE - gradSize, gradX));
   gradY = Math.max(0, Math.min(SIZE - gradSize, gradY));
-  // draw and stamp
-  drawGradOverlay();
+  // stamp trail into mask
   for (let yy=0; yy<gradSize; yy++){
     for (let xx=0; xx<gradSize; xx++){
       const px = Math.round(gradX)+xx, py = Math.round(gradY)+yy;
-      maskData[py][px] = 1;
+      if (acqWeightEl && acqWeightEl.checked) maskData[py][px] = (maskData[py][px] || 0) + 1; else maskData[py][px] = 1;
     }
   }
-  updateMaskedSpectrum();
+  // then render with overlay marker
+  drawGradOverlay();
 }
 function startGrad(){
   gradActive = true;
@@ -582,6 +579,14 @@ gradModeEl.addEventListener('change', ()=>{
     shipModeEl.checked = false; stopShip();
     startGrad();
   } else stopGrad();
+});
+
+if (markerSizeInput) markerSizeInput.addEventListener('change', ()=>{
+  const v = Math.max(1, Math.min(16, parseInt(markerSizeInput.value || '6', 10)));
+  markerSizeInput.value = String(v);
+  pongSize = v;
+  shipSize = v;
+  gradSize = v;
 });
 
 window.addEventListener('keydown', (e)=>{
@@ -744,8 +749,7 @@ function updateReconstructionFromVals(rVals, gVals, bVals, maxSum, targetAvgSum)
 // Ensure pong mode starts disabled and original is shown
 pongModeEl.checked = false;
 stopPong();
-hideOriginalEl.checked = false;
-srcCanvas.style.visibility = 'visible';
+// removed original checkbox/button state here
 
 attachMaskPainting();
 redrawMaskCanvas();
