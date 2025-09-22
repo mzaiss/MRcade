@@ -487,11 +487,12 @@ function stepShip() {
   // move
   shipX += shipVX;
   shipY += shipVY;
-  // reflect at walls
-  if (shipX < 0) { shipX = 0; shipVX = -shipVX; }
-  if (shipX > SIZE - shipSize) { shipX = SIZE - shipSize; shipVX = -shipVX; }
-  if (shipY < 0) { shipY = 0; shipVY = -shipVY; }
-  if (shipY > SIZE - shipSize) { shipY = SIZE - shipSize; shipVY = -shipVY; }
+  // reflect at walls with strong damping
+  const wallDamping = 0.1; // Reduce velocity by 90% on wall hit (almost stops)
+  if (shipX < 0) { shipX = 0; shipVX = -shipVX * wallDamping; }
+  if (shipX > SIZE - shipSize) { shipX = SIZE - shipSize; shipVX = -shipVX * wallDamping; }
+  if (shipY < 0) { shipY = 0; shipVY = -shipVY * wallDamping; }
+  if (shipY > SIZE - shipSize) { shipY = SIZE - shipSize; shipVY = -shipVY * wallDamping; }
   // stamp trail into mask
   for (let yy = 0; yy < shipSize; yy++) {
     for (let xx = 0; xx < shipSize; xx++) {
