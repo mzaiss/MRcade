@@ -858,6 +858,14 @@ attachMaskPainting();
 redrawMaskCanvas();
 process();
 
+// Enable curl (ship) mode by default on startup
+gradModeEl.checked = false;
+pongModeEl.checked = false;
+shipModeEl.checked = true;
+stopPong();
+stopGrad();
+startShip();
+
 function computeAvgNonZeroSumInImageData(imgData) {
   const d = imgData.data;
   let sum = 0, count = 0;
