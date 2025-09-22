@@ -47,6 +47,7 @@ const markerSizeInput = document.getElementById('markerSize');
 const remoteTiltEl = document.getElementById('remoteTilt');
 const acqWeightEl = document.getElementById('acqWeight');
 const remoteTiltStatusEl = document.getElementById('remoteTiltStatus');
+const localTiltStatusEl = document.getElementById('localTiltStatus');
 const emojiNameEl = document.getElementById('emojiName');
 
 // const srcCtx = srcCanvas.getContext('2d');
@@ -602,6 +603,7 @@ window.addEventListener('keyup', (e)=>{
 let rtWs = null;
 let rtPeer = '1';
 function setRemoteTiltStatus(t){ if (remoteTiltStatusEl) remoteTiltStatusEl.textContent = t; }
+function setLocalTiltStatus(t){ if (localTiltStatusEl) localTiltStatusEl.textContent = t; }
 function startRemoteTilt(){
   try { if (rtWs) { rtWs.close(); rtWs = null; } } catch{}
   try {
@@ -631,6 +633,75 @@ function startRemoteTilt(){
 }
 function stopRemoteTilt(){ try { if (rtWs) rtWs.close(); } catch{} rtWs = null; setRemoteTiltStatus(''); }
 if (remoteTiltEl) remoteTiltEl.addEventListener('change', ()=>{ if (remoteTiltEl.checked) startRemoteTilt(); else stopRemoteTilt(); });
+
+// Local tilt detection and handling
+let localTiltActive = false;
+let localTiltEverFired = false;
+let lastLocalSend = 0;
+const LOCAL_INTERVAL_MS = 100;
+function handleLocalOrientation(e){
+  if (!localTiltEverFired) {
+    localTiltEverFired = true;
+    setLocalTiltStatus('on');
+  }
+  const now = performance.now();
+  if (now - lastLocalSend < LOCAL_INTERVAL_MS) return;
+  lastLocalSend = now;
+  const beta = e.beta || 0, gamma = e.gamma || 0;
+  const nx = Math.max(-1, Math.min(1, gamma / 45));
+  const ny = Math.max(-1, Math.min(1, beta / 45));
+  if (shipActive) { shipVX += nx * shipAccel * 4; shipVY += ny * shipAccel * 4; }
+  if (gradActive) { gradX += nx * 8; gradY += ny * 8; }
+}
+function startLocalTilt(){
+  if (localTiltActive) return;
+  localTiltActive = true;
+  localTiltEverFired = false;
+  setLocalTiltStatus('probing...');
+  window.addEventListener('deviceorientation', handleLocalOrientation);
+  // Probe for 2 seconds; if no events, turn it back off
+  setTimeout(()=>{
+    if (!localTiltEverFired) {
+      stopLocalTilt();
+      setLocalTiltStatus('not available');
+    }
+  }, 2000);
+}
+function stopLocalTilt(){
+  if (!localTiltActive) return;
+  localTiltActive = false;
+  // don't override a more specific status set by the probe caller
+  window.removeEventListener('deviceorientation', handleLocalOrientation);
+}
+// auto-start local tilt when available
+
+// Auto-detect mobile + sensor support, suggest enabling
+try {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  const hasOrientation = typeof window.DeviceOrientationEvent !== 'undefined';
+  if (hasOrientation) {
+    // For iOS 13+ permissions
+    const needsPerm = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+    if (needsPerm) {
+      localTiltStatusEl && (localTiltStatusEl.textContent = 'tap screen to enable');
+      const onTap = async () => {
+        try {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res === 'granted') { startLocalTilt(); localTiltStatusEl && (localTiltStatusEl.textContent = 'on'); }
+          else { localTiltStatusEl && (localTiltStatusEl.textContent = 'denied'); }
+        } catch {
+          localTiltStatusEl && (localTiltStatusEl.textContent = 'error');
+        }
+        window.removeEventListener('click', onTap, { once: true });
+      };
+      window.addEventListener('click', onTap, { once: true });
+    } else {
+      startLocalTilt();
+    }
+  } else {
+    localTiltStatusEl && (localTiltStatusEl.textContent = 'not available');
+  }
+} catch{}
 
 // Arrow keys control inertia, space stamps at ship position when active
 window.addEventListener('keydown', (e) => {
