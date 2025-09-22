@@ -47,6 +47,27 @@
       h1{font-size:12px;margin:0 0 2px}
       .caption{font-size:8px}
     }
+    
+    /* Desktop - side-by-side layout */
+    @media (min-width: 769px) {
+      .row{flex-direction:row;gap:8px}
+      .panel{width:50%;max-width:50%}
+      canvas{max-width:100%;margin:0}
+    }
+    
+    /* Mobile landscape - switch to side-by-side layout */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .row{flex-direction:row;gap:8px}
+      .panel{width:50%;max-width:50%}
+      canvas{max-width:100%;margin:0}
+      h1{font-size:14px;margin:0 0 4px}
+      .controls{gap:4px;margin-bottom:4px}
+      .checkbox-grid{grid-template-columns:1fr 1fr;gap:2px 8px}
+      .tilt-controls{gap:2px}
+      button{font-size:12px;padding:4px 8px}
+      .caption{font-size:9px}
+      label{font-size:10px}
+    }
   </style>
   <script defer src="standalone-fft.js"></script>
   <script defer src="app.js"></script>
