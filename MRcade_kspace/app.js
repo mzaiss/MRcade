@@ -648,6 +648,26 @@ let localTiltActive = false;
 let localTiltEverFired = false;
 let lastLocalSend = 0;
 const LOCAL_INTERVAL_MS = 100;
+function getScreenOrientationAngle(){
+  try {
+    let a = 0;
+    if (screen && screen.orientation && typeof screen.orientation.angle === 'number') a = screen.orientation.angle;
+    else if (typeof window.orientation === 'number') a = window.orientation;
+    a = ((a % 360) + 360) % 360;
+    if (a === 0 || a === 90 || a === 180 || a === 270) return a;
+    return 0;
+  } catch { return 0; }
+}
+function mapTiltToScreen(beta, gamma){
+  const nx0 = Math.max(-1, Math.min(1, (gamma || 0) / 45));
+  const ny0 = Math.max(-1, Math.min(1, (beta || 0) / 45));
+  const a = getScreenOrientationAngle();
+  if (a === 0) return { nx: nx0, ny: ny0 };
+  if (a === 90) return { nx: ny0, ny: -nx0 }; // rotate vector by -90°
+  if (a === 180) return { nx: -nx0, ny: -ny0 }; // rotate by 180°
+  if (a === 270) return { nx: -ny0, ny: nx0 }; // rotate by +90°
+  return { nx: nx0, ny: ny0 };
+}
 function handleLocalOrientation(e){
   if (!localTiltEverFired) {
     localTiltEverFired = true;
@@ -657,8 +677,7 @@ function handleLocalOrientation(e){
   if (now - lastLocalSend < LOCAL_INTERVAL_MS) return;
   lastLocalSend = now;
   const beta = e.beta || 0, gamma = e.gamma || 0;
-  const nx = Math.max(-1, Math.min(1, gamma / 45));
-  const ny = Math.max(-1, Math.min(1, beta / 45));
+  const { nx, ny } = mapTiltToScreen(beta, gamma);
   if (shipActive) { shipVX += nx * shipAccel * 4; shipVY += ny * shipAccel * 4; }
   if (gradActive) { gradX += nx * 8; gradY += ny * 8; }
 }
