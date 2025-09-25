@@ -40,6 +40,7 @@ const fftMaskedCanvas = maskCanvas; // unify: draw mask directly on masked k-spa
 const reconCanvas = document.getElementById('recon');
 const btn = document.getElementById('btn');
 const revealOriginalBtn = document.getElementById('revealOriginal');
+const mobileSpaceBtn = document.getElementById('mobileSpace');
 const pongModeEl = document.getElementById('pongMode');
 const shipModeEl = document.getElementById('curlMode');
 const gradModeEl = document.getElementById('gradMode');
@@ -416,29 +417,35 @@ pongModeEl.addEventListener('change', () => {
   // turning on pong disables ship
   if (pongModeEl.checked) { shipModeEl.checked = false; stopShip(); startPong(); }
   else stopPong();
+  if (mobileSpaceBtn) mobileSpaceBtn.style.display = pongModeEl.checked ? '' : 'none';
 });
 
-// Spacebar to stamp mask at current pong position
-window.addEventListener('keydown', (e) => {
+// Space action for Pong: shared between keyboard and mobile button
+function stampAtPongPosition(){
   if (!pongActive) return;
-  if (e.code === 'Space') {
-    e.preventDefault();
-    // stamp a white square in mask
-    const sx = pongX;
-    const sy = pongY;
-    for (let yy = 0; yy < pongSize; yy++) {
-      for (let xx = 0; xx < pongSize; xx++) {
-        const px = sx + xx;
-        const py = sy + yy;
-        if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
-          if (acqWeightEl && acqWeightEl.checked) maskData[py][px] = (maskData[py][px] || 0) + 1; else maskData[py][px] = 1;
-        }
+  const sx = pongX;
+  const sy = pongY;
+  for (let yy = 0; yy < pongSize; yy++) {
+    for (let xx = 0; xx < pongSize; xx++) {
+      const px = sx + xx;
+      const py = sy + yy;
+      if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
+        if (acqWeightEl && acqWeightEl.checked) maskData[py][px] = (maskData[py][px] || 0) + 1; else maskData[py][px] = 1;
       }
     }
-    redrawMaskCanvas();
-    updateMaskedSpectrum();
   }
+  redrawMaskCanvas();
+  updateMaskedSpectrum();
+}
+
+// Spacebar to stamp mask at current pong position (desktop)
+window.addEventListener('keydown', (e) => {
+  if (!pongActive) return;
+  if (e.code === 'Space') { e.preventDefault(); stampAtPongPosition(); }
 });
+
+// Mobile Space button
+if (mobileSpaceBtn) mobileSpaceBtn.addEventListener('click', () => { stampAtPongPosition(); });
 
 // --- Ship mode (inertial movement) ---
 let shipActive = false;
@@ -854,6 +861,9 @@ function updateReconstructionFromVals(rVals, gVals, bVals, maxSum, targetAvgSum)
 pongModeEl.checked = false;
 stopPong();
 // removed original checkbox/button state here
+
+// initialize mobile Space button visibility according to current pong checkbox
+if (mobileSpaceBtn) mobileSpaceBtn.style.display = pongModeEl.checked ? '' : 'none';
 
 attachMaskPainting();
 redrawMaskCanvas();
